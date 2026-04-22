@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BFC SMART HUB - Updated API</title>
+    <style>
+        :root { --primary: #e11b22; --bg: #0b0b0b; --card: rgba(255, 255, 255, 0.07); --text: #ffffff; }
+        body { font-family: 'Poppins', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; justify-content: center; min-height: 100vh; padding: 15px; }
+        .container { width: 100%; max-width: 420px; background: var(--card); border-radius: 30px; padding: 25px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(20px); height: fit-content; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        .face-box { position: relative; width: 100px; height: 100px; margin: 0 auto 15px; border-radius: 50%; border: 2px solid var(--primary); overflow: hidden; background: #000; }
+        #video { width: 100%; height: 100%; object-fit: cover; }
+        .scan-line { position: absolute; width: 100%; height: 2px; background: var(--primary); top: 0; animation: scan 2s infinite; }
+        @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
+        input { width: 100%; padding: 14px; margin-top: 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.1); color: #fff; box-sizing: border-box; outline: none; }
+        .btn { width: 100%; padding: 15px; border-radius: 12px; border: none; font-weight: bold; margin-top: 15px; cursor: pointer; transition: 0.3s; font-size: 16px; }
+        .btn-prime { background: var(--primary); color: #fff; }
+        .btn-add { background: #28a745; width: auto; padding: 8px 15px; font-size: 12px; float: left; margin-bottom: 10px; color: white; }
+        .order-row { display: flex; gap: 8px; margin-top: 10px; clear: both; }
+        .btn-del { background: #ff4444; color: white; border-radius: 10px; padding: 0 15px; border: none; cursor: pointer; }
+        #success-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 2000; justify-content: center; align-items: center; flex-direction: column; padding: 20px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 style="color: var(--primary); margin: 0 0 15px 0;">BFC SMART HUB</h2>
+    <div class="face-box">
+        <video id="video" autoplay playsinline></video>
+        <div class="scan-line"></div>
+    </div>
+
+    <div id="reg-form">
+        <input type="text" id="r_name" placeholder="রাইডার নাম">
+        <input type="text" id="r_id" placeholder="রাইডার আইডি">
+        <input type="tel" id="r_phone" placeholder="মোবাইল নম্বর">
+        <button class="btn btn-prime" onclick="fastRegister()">ভেরিফাই ও সেভ</button>
+    </div>
+
+    <div id="pickup-form" class="hidden">
+        <div style="background: rgba(40,167,69,0.1); padding: 10px; border-radius: 12px; margin-bottom: 15px;">
+            <p id="welcome-msg" style="color: #28a745; margin: 0; font-weight: bold; font-size: 14px;"></p>
+        </div>
+        <div id="order-container">
+            <div class="order-row">
+                <input type="text" class="order-input" placeholder="অর্ডার কোড (উদাঃ z8zw)" maxlength="4">
+            </div>
+        </div>
+        <button class="btn btn-add" onclick="addOrderRow()">+ আরো অর্ডার</button>
+        <button class="btn btn-prime" id="submitBtn" onclick="submitToSheet()">Confirm Pickup</button>
+        <p onclick="resetApp()" style="font-size: 11px; color: #666; margin-top: 25px; cursor: pointer;">প্রোফাইল রিসেট করুন</p>
+    </div>
+</div>
+
+<div id="success-modal">
+    <div style="background: #111; padding: 30px; border-radius: 25px; border: 1px solid var(--primary); text-align: center;">
+        <h2 style="color: #28a745;">ধন্যবাদ!</h2>
+        <p>পিকআপ ডাটা সফলভাবে জমা হয়েছে।</p>
+        <button class="btn btn-prime" onclick="location.reload()">বন্ধ করুন</button>
+    </div>
+</div>
+
+<script>
+    const RESTAURANT_PREFIX = "rioi"; 
+    // আপডেট করা শিট ডিবি লিঙ্ক
+    const SHEETDB_URL = "https://sheetdb.io/api/v1/89siblplnl6dh";
+
+    window.onload = () => {
+        initCamera();
+        checkUser(); 
+    };
+
+    async function initCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+            document.getElementById('video').srcObject = stream;
+        } catch (e) { console.log("Camera access denied"); }
+    }
+
+    function checkUser() {
+        const data = localStorage.getItem('riderData');
+        if(data) { showPickupScreen(JSON.parse(data)); }
+    }
+
+    function fastRegister() {
+        const name = document.getElementById('r_name').value.trim();
+        const id = document.getElementById('r_id').value.trim();
+        const phone = document.getElementById('r_phone').value.trim();
+
+        if(!name || !id || !phone) {
+            alert("দয়া করে নাম, আইডি এবং মোবাইল নম্বর দিন!");
+            return;
+        }
+
+        const riderData = { name, id, phone };
+        localStorage.setItem('riderData', JSON.stringify(riderData));
+        showPickupScreen(riderData);
+    }
+
+    function showPickupScreen(data) {
+        document.getElementById('reg-form').classList.add('hidden');
+        document.getElementById('pickup-form').classList.remove('hidden');
+        document.getElementById('welcome-msg').innerText = "✓ ভেরিফাইড আইডি: " + data.id + "\n" + data.name;
+    }
+
+    function addOrderRow() {
+        const div = document.createElement('div');
+        div.className = 'order-row';
+        div.innerHTML = `<input type="text" class="order-input" placeholder="অর্ডার কোড" maxlength="4"><button class="btn-del" onclick="this.parentElement.remove()">✕</button>`;
+        document.getElementById('order-container').appendChild(div);
+    }
+
+    function getWeeklyCode() {
+        const now = new Date();
+        const yearShort = now.getFullYear().toString().slice(-2);
+        const startDate = new Date(now.getFullYear(), 0, 1);
+        const days = Math.floor((now - startDate) / (24 * 60 * 60 * 1000));
+        const week = Math.ceil(days / 7);
+        return yearShort + (week < 10 ? "0" + week : week);
+    }
+
+    async function submitToSheet() {
+        const inputs = document.getElementsByClassName('order-input');
+        const weekly = getWeeklyCode();
+        let fullCodes = [];
+
+        for(let i of inputs) {
+            if(i.value.trim() !== "") {
+                fullCodes.push(`${RESTAURANT_PREFIX}-${weekly}-${i.value.toLowerCase().trim()}`);
+            }
+        }
+        
+        if(fullCodes.length === 0) { alert("অর্ডার কোড দিন!"); return; }
+
+        const rider = JSON.parse(localStorage.getItem('riderData'));
+        const btn = document.getElementById('submitBtn');
+        btn.innerText = "পাঠানো হচ্ছে...";
+        btn.disabled = true;
+
+        const payload = {
+            "data": [{
+                "name": rider.name,
+                "id": rider.id,
+                "phone": "'" + rider.phone, // গুগল শিটে নম্বর ফরম্যাট ঠিক রাখতে ' ব্যবহার করা হয়েছে
+                "order codes": fullCodes.join(", "),
+                "time": new Date().toLocaleString('bn-BD')
+            }]
+        };
+
+        try {
+            const response = await fetch(SHEETDB_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if(response.ok) { 
+                document.getElementById('success-modal').style.display = 'flex'; 
+            } else {
+                throw new Error("Failed to send");
+            }
+        } catch (error) {
+            alert("ইন্টারনেট সমস্যা! আবার চেষ্টা করুন।");
+            btn.disabled = false;
+            btn.innerText = "Confirm Pickup";
+        }
+    }
+
+    function resetApp() {
+        if(confirm("আপনি কি নিশ্চিত প্রোফাইল রিসেট করতে চান?")) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+</script>
+</body>
+</html>
+
